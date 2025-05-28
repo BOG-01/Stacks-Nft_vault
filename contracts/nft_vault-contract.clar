@@ -41,6 +41,11 @@
 (define-data-var total-yield-generated uint u0)
 (define-data-var vault-fee-percentage uint u5) ;; 5% fee by default
 
+;; Track authorized operators who can manage NFTs on behalf of owners
+(define-map authorized-operators
+  { owner: principal, operator: principal }
+  { authorized: bool, expires-at: (optional uint) })
+
 ;; private functions
 ;;
 (define-private (is-owner)
@@ -60,6 +65,19 @@
     (if (> rate u0)
       (* time-elapsed rate)
       u0)))
+
+(define-private (is-authorized (owner principal) (operator principal))
+  (let ((auth-data (default-to { authorized: false, expires-at: none } 
+                    (map-get? authorized-operators { owner: owner, operator: operator }))))
+    (and 
+      (get authorized auth-data)
+      (match (get expires-at auth-data)
+        expires (< (current-time) expires)
+        true))))
+
+(define-private (can-manage-nft (owner principal))
+  (or (is-eq tx-sender owner) 
+      (is-authorized owner tx-sender)))
 
 ;; public functions
 ;;
@@ -155,3 +173,33 @@
     (asserts! (<= new-fee u100) (err u109))
     (var-set vault-fee-percentage new-fee)
     (ok true)))
+
+;; Authorize an operator to manage NFTs on behalf of the owner
+(define-public (authorize-operator (operator principal) (expires-at (optional uint)))
+  (begin
+    (map-set authorized-operators
+      { owner: tx-sender, operator: operator }
+      { authorized: true, expires-at: expires-at })
+    (ok true)))
+
+;; Revoke operator authorization
+(define-public (revoke-operator (operator principal))
+  (begin
+    (map-delete authorized-operators { owner: tx-sender, operator: operator })
+    (ok true)))
+
+;; Get vault statistics
+(define-read-only (get-vault-stats)
+  { total-nfts: (var-get total-nfts-deposited),
+    total-yield: (var-get total-yield-generated),
+    fee-percentage: (var-get vault-fee-percentage) })
+
+;; Check if an NFT is in the vault
+(define-read-only (is-in-vault (owner principal) (token-contract principal) (token-id uint))
+  (is-some (map-get? vault-entries { owner: owner, token-contract: token-contract, token-id: token-id })))
+
+;; Get NFT yield information
+(define-read-only (get-nft-yield-info (token-contract principal) (token-id uint))
+  (default-to 
+    { yield-rate: u0, last-claimed: u0, total-earned: u0 }
+    (map-get? nft-yields { token-contract: token-contract, token-id: token-id })))
