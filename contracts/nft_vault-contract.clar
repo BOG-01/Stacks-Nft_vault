@@ -29,22 +29,20 @@
   { owner: principal, token-contract: principal, token-id: uint } 
   { deposited-at: uint, locked-until: (optional uint) })
 
-;; Global vault statistics
-(define-data-var total-nfts-deposited uint u0)
-
 ;; Track investment yields for NFTs
 (define-map nft-yields
   { token-contract: principal, token-id: uint }
   { yield-rate: uint, last-claimed: uint, total-earned: uint })
 
-;; Global yield statistics
-(define-data-var total-yield-generated uint u0)
-(define-data-var vault-fee-percentage uint u5) ;; 5% fee by default
-
 ;; Track authorized operators who can manage NFTs on behalf of owners
 (define-map authorized-operators
   { owner: principal, operator: principal }
   { authorized: bool, expires-at: (optional uint) })
+
+;; Global vault statistics
+(define-data-var total-nfts-deposited uint u0)
+(define-data-var total-yield-generated uint u0)
+(define-data-var vault-fee-percentage uint u5) ;; 5% fee by default
 
 ;; private functions
 ;;
@@ -53,18 +51,6 @@
 
 (define-private (current-time)
   block-height)
-
-(define-private (transfer-nft (token-contract <nft-trait>) (token-id uint) (sender principal) (recipient principal))
-  (contract-call? token-contract transfer token-id sender recipient))
-
-(define-private (calculate-yield (token-contract principal) (token-id uint))
-  (let ((yield-data (default-to { yield-rate: u0, last-claimed: u0, total-earned: u0 }
-                    (map-get? nft-yields { token-contract: token-contract, token-id: token-id })))
-        (time-elapsed (- (current-time) (get last-claimed yield-data)))
-        (rate (get yield-rate yield-data)))
-    (if (> rate u0)
-      (* time-elapsed rate)
-      u0)))
 
 (define-private (is-authorized (owner principal) (operator principal))
   (let ((auth-data (default-to { authorized: false, expires-at: none } 
@@ -79,6 +65,18 @@
   (or (is-eq tx-sender owner) 
       (is-authorized owner tx-sender)))
 
+(define-private (calculate-yield (token-contract principal) (token-id uint))
+  (let ((yield-data (default-to { yield-rate: u0, last-claimed: u0, total-earned: u0 }
+                    (map-get? nft-yields { token-contract: token-contract, token-id: token-id })))
+        (time-elapsed (- (current-time) (get last-claimed yield-data)))
+        (rate (get yield-rate yield-data)))
+    (if (> rate u0)
+      (* time-elapsed rate)
+      u0)))
+
+(define-private (transfer-nft (token-contract <nft-trait>) (token-id uint) (sender principal) (recipient principal))
+  (contract-call? token-contract transfer token-id sender recipient))
+
 ;; public functions
 ;;
 ;; Deposit an NFT into the vault
@@ -92,6 +90,12 @@
         (begin
           (map-set vault-entries entry-key 
             { deposited-at: (current-time), locked-until: lock-period })
+          
+          ;; Initialize yield data if not exists
+          (if (is-none (map-get? nft-yields { token-contract: (contract-of token-contract), token-id: token-id }))
+            (map-set nft-yields { token-contract: (contract-of token-contract), token-id: token-id }
+              { yield-rate: u1, last-claimed: (current-time), total-earned: u0 })
+            true)
           
           ;; Update stats
           (var-set total-nfts-deposited (+ (var-get total-nfts-deposited) u1))
@@ -123,7 +127,7 @@
             (var-set total-nfts-deposited (- (var-get total-nfts-deposited) u1))
             
             (ok true))
-        error (err error))))
+        error (err error)))))
 
 ;; Set yield rate for an NFT
 (define-public (set-yield-rate (token-contract principal) (token-id uint) (new-rate uint))
@@ -166,14 +170,6 @@
       
       (ok net-amount))))
 
-;; Set vault fee percentage (owner only)
-(define-public (set-fee-percentage (new-fee uint))
-  (begin
-    (asserts! (is-owner) err-owner-only)
-    (asserts! (<= new-fee u100) (err u109))
-    (var-set vault-fee-percentage new-fee)
-    (ok true)))
-
 ;; Authorize an operator to manage NFTs on behalf of the owner
 (define-public (authorize-operator (operator principal) (expires-at (optional uint)))
   (begin
@@ -186,6 +182,14 @@
 (define-public (revoke-operator (operator principal))
   (begin
     (map-delete authorized-operators { owner: tx-sender, operator: operator })
+    (ok true)))
+
+;; Set vault fee percentage (owner only)
+(define-public (set-fee-percentage (new-fee uint))
+  (begin
+    (asserts! (is-owner) err-owner-only)
+    (asserts! (<= new-fee u100) (err u109))
+    (var-set vault-fee-percentage new-fee)
     (ok true)))
 
 ;; Get vault statistics
