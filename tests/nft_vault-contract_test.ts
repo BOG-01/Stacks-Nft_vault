@@ -1,4 +1,3 @@
-
 import { Clarinet, Tx, Chain, Account, types } from 'https://deno.land/x/clarinet@v0.14.0/index.ts';
 import { assertEquals, assertStringIncludes } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
@@ -269,5 +268,329 @@ Clarinet.test({
         assertEquals(block.receipts.length, 2);
         assertStringIncludes(block.receipts[0].result.expectOk(), "fee-percentage: u8");
         assertStringIncludes(block.receipts[1].result.expectOk(), "yield-rate: u100");
+    },
+});
+
+// Tests for NFT deposit and withdrawal functionality
+
+Clarinet.test({
+    name: "Deposit NFT into vault",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 1;
+        
+        // First mint an NFT to wallet1
+        let block = chain.mineBlock([
+            Tx.contractCall("mock-nft", "mint", [
+                types.principal(wallet1.address),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectOk().expectBool(true);
+        
+        // Deposit the NFT into the vault
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.none()
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectOk().expectBool(true);
+        
+        // Verify NFT is in vault
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "is-in-vault", [
+                types.principal(wallet1.address),
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectBool(true);
+        
+        // Check vault stats updated
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "get-vault-stats", [], wallet1.address)
+        ]);
+        
+        assertStringIncludes(block.receipts[0].result.expectOk(), "total-nfts: u1");
+    },
+});
+
+Clarinet.test({
+    name: "Cannot deposit already deposited NFT",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 2;
+        
+        // Mint and deposit NFT
+        let block = chain.mineBlock([
+            Tx.contractCall("mock-nft", "mint", [
+                types.principal(wallet1.address),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.none()
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectOk().expectBool(true);
+        
+        // Try to deposit again - should fail
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.none()
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectErr().expectUint(106); // err-already-deposited
+    },
+});
+
+Clarinet.test({
+    name: "Withdraw NFT from vault",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 3;
+        
+        // Mint and deposit NFT
+        let block = chain.mineBlock([
+            Tx.contractCall("mock-nft", "mint", [
+                types.principal(wallet1.address),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.none()
+            ], wallet1.address)
+        ]);
+        
+        // Withdraw the NFT
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "withdraw-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectOk().expectBool(true);
+        
+        // Verify NFT is no longer in vault
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "is-in-vault", [
+                types.principal(wallet1.address),
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectBool(false);
+    },
+});
+
+Clarinet.test({
+    name: "Cannot withdraw NFT not deposited",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 999;
+        
+        // Try to withdraw NFT that was never deposited
+        let block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "withdraw-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectErr().expectUint(107); // err-not-deposited
+    },
+});
+
+Clarinet.test({
+    name: "Deposit NFT with lock period",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 4;
+        const lockUntil = 50;
+        
+        // Mint and deposit NFT with lock period
+        let block = chain.mineBlock([
+            Tx.contractCall("mock-nft", "mint", [
+                types.principal(wallet1.address),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.some(types.uint(lockUntil))
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectOk().expectBool(true);
+        
+        // Try to withdraw before lock expires - should fail
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "withdraw-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectErr().expectUint(103); // err-vault-locked
+    },
+});
+
+Clarinet.test({
+    name: "Claim yield from deposited NFT",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 5;
+        const yieldRate = 10;
+        
+        // Set up yield rate for the NFT
+        let block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "set-yield-rate", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.uint(yieldRate)
+            ], deployer.address)
+        ]);
+        
+        // Mint and deposit NFT
+        block = chain.mineBlock([
+            Tx.contractCall("mock-nft", "mint", [
+                types.principal(wallet1.address),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.none()
+            ], wallet1.address)
+        ]);
+        
+        // Wait a few blocks to accumulate yield
+        chain.mineEmptyBlock();
+        chain.mineEmptyBlock();
+        chain.mineEmptyBlock();
+        
+        // Claim yield
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "claim-yield", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        // Should return the net yield amount after fees
+        const result = block.receipts[0].result;
+        // The exact amount depends on blocks elapsed and fee calculation
+        assertEquals(result.expectOk().slice(0, 1), "u"); // Should be a uint
+    },
+});
+
+Clarinet.test({
+    name: "Cannot claim yield for non-deposited NFT",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 999;
+        
+        // Try to claim yield for NFT not in vault
+        let block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "claim-yield", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        block.receipts[0].result.expectErr().expectUint(107); // err-not-deposited
+    },
+});
+
+Clarinet.test({
+    name: "Fee calculation on yield claim",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const wallet1 = accounts.get("wallet_1")!;
+        const tokenId = 6;
+        const yieldRate = 20;
+        const feePercentage = 10;
+        
+        // Set custom fee percentage
+        let block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "set-fee-percentage", [
+                types.uint(feePercentage)
+            ], deployer.address)
+        ]);
+        
+        // Set yield rate and mint/deposit NFT
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "set-yield-rate", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.uint(yieldRate)
+            ], deployer.address),
+            Tx.contractCall("mock-nft", "mint", [
+                types.principal(wallet1.address),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "deposit-nft", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId),
+                types.none()
+            ], wallet1.address)
+        ]);
+        
+        // Wait exactly 1 block to get predictable yield
+        chain.mineEmptyBlock();
+        
+        // Claim yield - should be (yieldRate * 1 block) - 10% fee
+        block = chain.mineBlock([
+            Tx.contractCall("nft_vault-contract", "claim-yield", [
+                types.principal(`${wallet1.address}.mock-nft`),
+                types.uint(tokenId)
+            ], wallet1.address)
+        ]);
+        
+        assertEquals(block.receipts.length, 1);
+        // Net yield should be yieldRate - (yieldRate * feePercentage / 100)
+        // = 20 - (20 * 10 / 100) = 20 - 2 = 18
+        assertEquals(block.receipts[0].result.expectOk(), "u18");
     },
 });
