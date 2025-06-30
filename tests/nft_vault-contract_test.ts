@@ -2,7 +2,7 @@ import { Clarinet, Tx, Chain, Account, types } from 'https://deno.land/x/clarine
 import { assertEquals, assertStringIncludes } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
 // Mock NFT contract for testing
-const mockNftContract = "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.mock-nft";
+const mockNftContract = "ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.mock-nft";
 
 Clarinet.test({
     name: "Get initial vault stats",
@@ -293,7 +293,7 @@ Clarinet.test({
         // Deposit the NFT into the vault
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal("ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.mock-nft"),
                 types.uint(tokenId),
                 types.none()
             ], wallet1.address)
@@ -306,7 +306,7 @@ Clarinet.test({
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "is-in-vault", [
                 types.principal(wallet1.address),
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal("ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5.mock-nft"),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -339,7 +339,7 @@ Clarinet.test({
         
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.none()
             ], wallet1.address)
@@ -351,7 +351,7 @@ Clarinet.test({
         // Try to deposit again - should fail
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.none()
             ], wallet1.address)
@@ -378,7 +378,7 @@ Clarinet.test({
         
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.none()
             ], wallet1.address)
@@ -387,7 +387,7 @@ Clarinet.test({
         // Withdraw the NFT
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "withdraw-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -399,7 +399,7 @@ Clarinet.test({
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "is-in-vault", [
                 types.principal(wallet1.address),
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -418,7 +418,7 @@ Clarinet.test({
         // Try to withdraw NFT that was never deposited
         let block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "withdraw-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -445,7 +445,7 @@ Clarinet.test({
         
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.some(types.uint(lockUntil))
             ], wallet1.address)
@@ -457,7 +457,7 @@ Clarinet.test({
         // Try to withdraw before lock expires - should fail
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "withdraw-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -478,7 +478,7 @@ Clarinet.test({
         // Set up yield rate for the NFT
         let block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "set-yield-rate", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.uint(yieldRate)
             ], deployer.address)
@@ -494,7 +494,7 @@ Clarinet.test({
         
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.none()
             ], wallet1.address)
@@ -508,7 +508,7 @@ Clarinet.test({
         // Claim yield
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "claim-yield", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -530,7 +530,7 @@ Clarinet.test({
         // Try to claim yield for NFT not in vault
         let block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "claim-yield", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
@@ -559,7 +559,7 @@ Clarinet.test({
         // Set yield rate and mint/deposit NFT
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "set-yield-rate", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.uint(yieldRate)
             ], deployer.address),
@@ -571,7 +571,7 @@ Clarinet.test({
         
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "deposit-nft", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId),
                 types.none()
             ], wallet1.address)
@@ -583,7 +583,7 @@ Clarinet.test({
         // Claim yield - should be (yieldRate * 1 block) - 10% fee
         block = chain.mineBlock([
             Tx.contractCall("nft_vault-contract", "claim-yield", [
-                types.principal(`${wallet1.address}.mock-nft`),
+                types.principal(mockNftContract),
                 types.uint(tokenId)
             ], wallet1.address)
         ]);
