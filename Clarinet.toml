@@ -8,6 +8,10 @@ requirements = []
 path = "contracts/nft_vault-contract.clar"
 depends_on = []
 
+[contracts.mock-nft]
+path = "contracts/mock-nft.clar"
+depends_on = []
+
 [repl]
 costs_version = 2
 parser_version = 2
