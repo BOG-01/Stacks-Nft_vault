@@ -12,6 +12,6 @@ Clarinet.test({
         
         assertEquals(block.receipts.length, 1);
         const receipt = block.receipts[0];
-        assertEquals(receipt.result.expectOk(), '{ fee-percentage: u5, total-nfts: u0, total-yield: u0 }');
+        assertEquals(receipt.result, '{ fee-percentage: u5, total-nfts: u0, total-yield: u0 }');
     },
 });
